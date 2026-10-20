@@ -4,11 +4,16 @@ dist/
 coverage/
 .DS_Store
 *.log
-.env*
+.env
+.env.*
 !.env.example
+reachinbox.db
 *.db
 *.db-journal
 *.db-wal
+*.db-shm
 dump.rdb
 appendonlydir/
 .playwright-cli/
+.aistudio/
+public/assets/aistudio/

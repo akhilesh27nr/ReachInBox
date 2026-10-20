@@ -314,15 +314,45 @@ export async function notifySlackHourlyLimitHit(params: {
     return false;
   }
 
-  // 3) Check persistent DB deduplication first so alerts are never duplicated across restarts
+  // 3) Atomic persistent DB deduplication claim in slack_alert_dedup (survives restarts and multi-worker races)
   const dedupeToken = `window:${windowIndex}`;
-  const existingSent = await db.execute({
-    sql: `SELECT id FROM email_events
-          WHERE userId = ? AND senderId = ? AND type = 'SLACK_ALERT_SENT' AND meta LIKE ?
-          LIMIT 1`,
-    args: [userId, senderId, `%${dedupeToken}%`],
+  const dbDedupeKey = `${userId}:${senderId}:${windowIndex}`;
+  const nowMs = Date.now();
+
+  const claimedInDb = await db.withTransaction(async (tx) => {
+    const existingDedup = await tx.execute({
+      sql: 'SELECT status, updatedAt FROM slack_alert_dedup WHERE dedupeKey = ?',
+      args: [dbDedupeKey],
+    });
+
+    if (existingDedup.rows.length > 0) {
+      const row = existingDedup.rows[0];
+      if (row.status === 'SENT') {
+        return false;
+      }
+      // If another worker is actively sending (< 30s old), do not duplicate
+      if (row.status === 'SENDING' && nowMs - Number(row.updatedAt || 0) < 30_000) {
+        return false;
+      }
+      const upd = await tx.execute({
+        sql: `UPDATE slack_alert_dedup
+              SET status = 'SENDING', attempts = attempts + 1, updatedAt = ?
+              WHERE dedupeKey = ? AND status != 'SENT'`,
+        args: [nowMs, dbDedupeKey],
+      });
+      return upd.rowsAffected > 0;
+    }
+
+    const ins = await tx.execute({
+      sql: `INSERT INTO slack_alert_dedup (dedupeKey, userId, senderId, windowIndex, status, attempts, createdAt, updatedAt)
+            VALUES (?, ?, ?, ?, 'SENDING', 1, ?, ?)
+            ON CONFLICT(dedupeKey) DO NOTHING`,
+      args: [dbDedupeKey, userId, senderId, windowIndex, nowMs, nowMs],
+    });
+    return ins.rowsAffected > 0;
   });
-  if (existingSent.rows.length > 0) {
+
+  if (!claimedInDb) {
     return false;
   }
 
@@ -384,7 +414,13 @@ export async function notifySlackHourlyLimitHit(params: {
     .catch(() => {});
 
   if (!result.ok) {
-    // Release Redis deduplication key so future retry or reconnected Slack can still alert
+    // Mark failed in slack_alert_dedup and release Redis deduplication key so future retry or reconnected Slack can still alert
+    await db
+      .execute({
+        sql: `UPDATE slack_alert_dedup SET status = 'FAILED', lastError = ?, updatedAt = ? WHERE dedupeKey = ?`,
+        args: [result.error || 'Slack delivery failed', Date.now(), dbDedupeKey],
+      })
+      .catch(() => {});
     await redisClient.del(dedupeKey).catch(() => {});
     await db
       .execute({
@@ -402,7 +438,14 @@ export async function notifySlackHourlyLimitHit(params: {
     return false;
   }
 
-  // Record persistent SLACK_ALERT_SENT event for durable deduplication and auditability
+  // Mark permanently SENT in slack_alert_dedup and record SLACK_ALERT_SENT event for auditability
+  await db
+    .execute({
+      sql: `UPDATE slack_alert_dedup SET status = 'SENT', lastError = NULL, updatedAt = ? WHERE dedupeKey = ?`,
+      args: [Date.now(), dbDedupeKey],
+    })
+    .catch(() => {});
+
   await db
     .execute({
       sql: `INSERT INTO email_events (id, userId, senderId, type, meta, createdAt)

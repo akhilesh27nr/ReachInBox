@@ -132,6 +132,11 @@ export function parseConfig(rawEnv: Record<string, string | undefined> = process
 
   const parsed = baseEnvSchema.parse(envCopy);
 
+  // In production deployments (outside managed Cloud Run preview), default STRICT_AUTH to true unless explicitly overridden
+  if (parsed.NODE_ENV === 'production' && !rawEnv.K_SERVICE && envCopy.STRICT_AUTH === undefined) {
+    parsed.STRICT_AUTH = true;
+  }
+
   // If STRICT_INFRASTRUCTURE is enabled, disable embedded fallback automatically
   if (parsed.STRICT_INFRASTRUCTURE) {
     parsed.ALLOW_EMBEDDED_FALLBACK = false;

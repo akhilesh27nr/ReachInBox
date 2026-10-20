@@ -25,6 +25,18 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions("userId", "expiresAt");
 
+CREATE TABLE IF NOT EXISTS oauth_states (
+  state TEXT PRIMARY KEY,
+  provider TEXT NOT NULL,
+  "browserBindHash" TEXT,
+  "userId" TEXT,
+  "createdAt" BIGINT NOT NULL,
+  "expiresAt" BIGINT NOT NULL,
+  "consumedAt" BIGINT
+);
+
+CREATE INDEX IF NOT EXISTS idx_oauth_states_expires ON oauth_states("expiresAt");
+
 CREATE TABLE IF NOT EXISTS senders (
   id TEXT PRIMARY KEY,
   "userId" TEXT NOT NULL,
@@ -57,6 +69,21 @@ CREATE TABLE IF NOT EXISTS slack_connections (
   "connectedAt" TEXT,
   "disconnectedAt" TEXT
 );
+
+CREATE TABLE IF NOT EXISTS slack_alert_dedup (
+  "dedupeKey" TEXT PRIMARY KEY,
+  "userId" TEXT NOT NULL,
+  "senderId" TEXT NOT NULL,
+  "windowIndex" BIGINT NOT NULL,
+  status TEXT NOT NULL,
+  attempts INTEGER DEFAULT 1,
+  "lastError" TEXT,
+  "createdAt" BIGINT NOT NULL,
+  "updatedAt" BIGINT NOT NULL,
+  UNIQUE("userId", "senderId", "windowIndex")
+);
+
+CREATE INDEX IF NOT EXISTS idx_slack_alert_dedup_user_window ON slack_alert_dedup("userId", "senderId", "windowIndex");
 
 CREATE TABLE IF NOT EXISTS campaigns (
   id TEXT PRIMARY KEY,

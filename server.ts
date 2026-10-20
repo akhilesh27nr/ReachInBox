@@ -14,7 +14,6 @@ import { closeEmailQueue } from './src/queues/email.queue.js';
 import { execSync } from 'child_process';
 import { reconcile } from './src/services/reconcile.js';
 import { getQueueAdminRouter } from './src/queues/bullboard.js';
-import { purgeNonAlexCarterAccounts } from './src/services/auth.js';
 import {
   apiRouter,
   requireAuth,
@@ -47,7 +46,6 @@ async function bootstrap() {
   // 1. Initialize relational database (PostgreSQL primary, or explicit embedded fallback)
   try {
     await initDb();
-    await purgeNonAlexCarterAccounts();
     console.log(`[Bootstrap] Relational database initialized (${getDatabaseEngine()}).`);
   } catch (dbErr: any) {
     console.error('[Bootstrap] Database initialization warning:', dbErr.message);

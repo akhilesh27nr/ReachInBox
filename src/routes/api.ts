@@ -45,6 +45,7 @@ import {
   setSessionCookies,
   clearSessionCookies,
   generateOAuthState,
+  issueOAuthState,
   setOAuthStateCookie,
   clearOAuthStateCookie,
   getOAuthStateCookie,
@@ -314,7 +315,7 @@ export async function handleGoogleOAuthStart(req: Request, res: Response) {
       'Google OAuth is not configured on this server. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env.'
     );
   }
-  const state = generateOAuthState();
+  const state = await issueOAuthState({ provider: 'google' });
   if (req.query.popup !== '1') {
     setOAuthStateCookie(res, req, state);
   }
@@ -373,7 +374,7 @@ export async function handleGoogleOAuthCallback(req: Request, res: Response) {
       return sendError(res, 400, 'MISSING_OAUTH_CODE', 'Missing authorization code from Google OAuth callback');
     }
 
-    const stateCheck = consumeOAuthState(stateParam, cookieState);
+    const stateCheck = await consumeOAuthState(stateParam, cookieState);
     clearOAuthStateCookie(res, req);
 
     if (!stateCheck.valid) {
@@ -667,7 +668,7 @@ apiRouter.post('/auth/logout', async (req: Request, res: Response) => {
 // 2. Slack OAuth, Webhook & Rate-Limit Alert Integration (Prompts 11 & 12)
 // ============================================================================
 
-export function handleSlackOAuthStart(req: Request, res: Response) {
+export async function handleSlackOAuthStart(req: Request, res: Response) {
   if (!isSlackOAuthConfigured()) {
     return sendError(
       res,
@@ -676,7 +677,7 @@ export function handleSlackOAuthStart(req: Request, res: Response) {
       'Slack OAuth is not configured on this server. Set SLACK_CLIENT_ID and SLACK_CLIENT_SECRET in .env.'
     );
   }
-  const state = generateOAuthState();
+  const state = await issueOAuthState({ provider: 'slack' });
   setOAuthStateCookie(res, req, state);
   const url = buildSlackAuthorizationUrl(req, state);
   if (req.query.format === 'json') {
@@ -710,7 +711,7 @@ export async function handleSlackOAuthCallback(req: Request, res: Response) {
       return sendError(res, 400, 'SLACK_MISSING_CODE', 'Missing authorization code from Slack callback');
     }
 
-    const stateCheck = consumeOAuthState(stateParam, cookieState);
+    const stateCheck = await consumeOAuthState(stateParam, cookieState);
     clearOAuthStateCookie(res, req);
 
     if (!stateCheck.valid) {

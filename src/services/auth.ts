@@ -7,12 +7,15 @@ export const SESSION_COOKIE_NAME = 'reachinbox_session';
 export const SIGNED_OUT_COOKIE_NAME = 'reachinbox_signed_out';
 export const OAUTH_STATE_COOKIE_NAME = 'reachinbox_oauth_state';
 export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+export const OAUTH_STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
-// Track consumed OAuth state nonces to prevent replay attacks (Prompt 9 & Prompt 11)
-const consumedOAuthStates = new Map<string, number>();
-
-export function resetConsumedOAuthStates(): void {
-  consumedOAuthStates.clear();
+export async function resetConsumedOAuthStates(): Promise<void> {
+  try {
+    const db = getDb();
+    await db.execute('DELETE FROM oauth_states');
+  } catch {
+    // Ignore if DB not yet initialized
+  }
 }
 
 export function hashToken(rawToken: string): string {
@@ -84,9 +87,9 @@ export function isGoogleOAuthConfigured(): boolean {
   return Boolean(config.GOOGLE_CLIENT_ID && config.GOOGLE_CLIENT_SECRET);
 }
 
-export function generateOAuthState(): string {
+export function generateOAuthState(nowMs = Date.now()): string {
   const nonce = crypto.randomBytes(24).toString('hex');
-  const issuedAt = Date.now().toString(36);
+  const issuedAt = nowMs.toString(36);
   const payload = `${nonce}.${issuedAt}`;
   const sig = crypto
     .createHmac('sha256', config.SESSION_SECRET)
@@ -95,14 +98,51 @@ export function generateOAuthState(): string {
   return `${payload}.${sig}`;
 }
 
-export function verifyOAuthState(stateParam: string, cookieState?: string): boolean {
+/**
+ * Generates and persists an expiring, single-use OAuth state record in the database,
+ * optionally bound to the initiating browser/session fingerprint.
+ */
+export async function issueOAuthState(options?: {
+  provider?: 'google' | 'slack' | string;
+  browserBinding?: string | null;
+  userId?: string | null;
+  ttlMs?: number;
+  nowMs?: number;
+}): Promise<string> {
+  const nowMs = options?.nowMs ?? Date.now();
+  const ttlMs = options?.ttlMs ?? OAUTH_STATE_TTL_MS;
+  const expiresAt = nowMs + ttlMs;
+  const state = generateOAuthState(nowMs);
+  const provider = options?.provider || 'oauth';
+  const browserBindHash = options?.browserBinding ? hashToken(options.browserBinding) : null;
+  const userId = options?.userId || null;
+
+  const db = getDb();
+  // Prune expired unconsumed state rows older than current time
+  await db
+    .execute({
+      sql: 'DELETE FROM oauth_states WHERE expiresAt < ? AND consumedAt IS NULL',
+      args: [nowMs - 60_000],
+    })
+    .catch(() => {});
+
+  await db.execute({
+    sql: `INSERT INTO oauth_states (state, provider, browserBindHash, userId, createdAt, expiresAt, consumedAt)
+          VALUES (?, ?, ?, ?, ?, ?, NULL)`,
+    args: [state, provider, browserBindHash, userId, nowMs, expiresAt],
+  });
+
+  return state;
+}
+
+export function verifyOAuthState(stateParam: string, cookieState?: string, nowMs = Date.now()): boolean {
   if (!stateParam || typeof stateParam !== 'string') return false;
   if (cookieState !== undefined && cookieState !== stateParam) return false;
   const parts = stateParam.split('.');
   if (parts.length !== 3) return false;
   const [nonce, issuedAtB36, sig] = parts;
   const issuedAt = parseInt(issuedAtB36, 36);
-  if (isNaN(issuedAt) || Date.now() - issuedAt > 15 * 60 * 1000) {
+  if (isNaN(issuedAt) || nowMs - issuedAt > 15 * 60 * 1000 || issuedAt > nowMs + 60 * 1000) {
     return false;
   }
   const payload = `${nonce}.${issuedAtB36}`;
@@ -118,13 +158,16 @@ export function verifyOAuthState(stateParam: string, cookieState?: string): bool
 }
 
 /**
- * Validates and atomically consumes an OAuth state token so replay attempts are rejected.
+ * Validates and atomically consumes a persistent OAuth state token in the database
+ * so replay attempts, expired tokens, browser-binding mismatches, and concurrent callbacks are rejected.
  */
-export function consumeOAuthState(
+export async function consumeOAuthState(
   stateParam?: string,
-  cookieState?: string
-): { valid: boolean; code?: 'INVALID_OAUTH_STATE' | 'OAUTH_STATE_REPLAYED'; message?: string } {
-  if (!stateParam || !verifyOAuthState(stateParam, cookieState)) {
+  cookieState?: string,
+  options?: { browserBinding?: string | null; nowMs?: number }
+): Promise<{ valid: boolean; code?: 'INVALID_OAUTH_STATE' | 'OAUTH_STATE_REPLAYED'; message?: string }> {
+  const nowMs = options?.nowMs ?? Date.now();
+  if (!stateParam || !verifyOAuthState(stateParam, cookieState, nowMs)) {
     return {
       valid: false,
       code: 'INVALID_OAUTH_STATE',
@@ -132,22 +175,93 @@ export function consumeOAuthState(
     };
   }
 
-  // Prune expired state entries older than 20 minutes
-  const cutoff = Date.now() - 20 * 60 * 1000;
-  for (const [k, ts] of consumedOAuthStates.entries()) {
-    if (ts < cutoff) consumedOAuthStates.delete(k);
-  }
+  const db = getDb();
+  return await db.withTransaction(async (tx) => {
+    const existingRes = await tx.execute({
+      sql: 'SELECT state, browserBindHash, expiresAt, consumedAt FROM oauth_states WHERE state = ?',
+      args: [stateParam],
+    });
 
-  if (consumedOAuthStates.has(stateParam)) {
-    return {
-      valid: false,
-      code: 'OAUTH_STATE_REPLAYED',
-      message: 'OAuth state token has already been used (replay attempt rejected).',
-    };
-  }
+    if (existingRes.rows.length > 0) {
+      const row = existingRes.rows[0];
+      if (row.consumedAt !== null && row.consumedAt !== undefined) {
+        return {
+          valid: false,
+          code: 'OAUTH_STATE_REPLAYED' as const,
+          message: 'OAuth state token has already been used (replay attempt rejected).',
+        };
+      }
 
-  consumedOAuthStates.set(stateParam, Date.now());
-  return { valid: true };
+      if (Number(row.expiresAt) <= nowMs) {
+        return {
+          valid: false,
+          code: 'INVALID_OAUTH_STATE' as const,
+          message: 'OAuth state token has expired.',
+        };
+      }
+
+      if (row.browserBindHash) {
+        const suppliedBinding = options?.browserBinding ?? cookieState;
+        if (!suppliedBinding || hashToken(suppliedBinding) !== String(row.browserBindHash)) {
+          return {
+            valid: false,
+            code: 'INVALID_OAUTH_STATE' as const,
+            message: 'OAuth state browser/session binding mismatch.',
+          };
+        }
+      }
+
+      const updateRes = await tx.execute({
+        sql: 'UPDATE oauth_states SET consumedAt = ? WHERE state = ? AND consumedAt IS NULL AND expiresAt > ?',
+        args: [nowMs, stateParam, nowMs],
+      });
+
+      if (updateRes.rowsAffected === 0) {
+        return {
+          valid: false,
+          code: 'OAUTH_STATE_REPLAYED' as const,
+          message: 'OAuth state token has already been used (concurrent replay rejected).',
+        };
+      }
+
+      return { valid: true };
+    }
+
+    // Fallback if state was created via synchronous generateOAuthState() in unit test:
+    // atomically insert as consumed so any second call or concurrent call is rejected.
+    const parts = stateParam.split('.');
+    const issuedAt = parseInt(parts[1], 36) || nowMs;
+    const expiresAt = issuedAt + OAUTH_STATE_TTL_MS;
+    if (expiresAt <= nowMs) {
+      return {
+        valid: false,
+        code: 'INVALID_OAUTH_STATE' as const,
+        message: 'OAuth state token has expired.',
+      };
+    }
+
+    const bindHash =
+      options?.browserBinding || cookieState
+        ? hashToken((options?.browserBinding || cookieState)!)
+        : null;
+
+    const insertRes = await tx.execute({
+      sql: `INSERT INTO oauth_states (state, provider, browserBindHash, userId, createdAt, expiresAt, consumedAt)
+            VALUES (?, 'oauth', ?, NULL, ?, ?, ?)
+            ON CONFLICT(state) DO NOTHING`,
+      args: [stateParam, bindHash, issuedAt, expiresAt, nowMs],
+    });
+
+    if (insertRes.rowsAffected === 0) {
+      return {
+        valid: false,
+        code: 'OAUTH_STATE_REPLAYED' as const,
+        message: 'OAuth state token has already been used (replay attempt rejected).',
+      };
+    }
+
+    return { valid: true };
+  });
 }
 
 export function buildGoogleAuthorizationUrl(req: Request, state: string): string {
@@ -208,6 +322,52 @@ export interface GoogleIdTokenClaims {
   picture?: string;
 }
 
+export interface GoogleJwk extends crypto.JsonWebKey {
+  kid: string;
+  kty: string;
+  alg?: string;
+  use?: string;
+}
+
+let googleFetchImpl: typeof fetch = fetch;
+let googleJwksOverride: GoogleJwk[] | null = null;
+let cachedGoogleJwks: { keys: GoogleJwk[]; fetchedAt: number } | null = null;
+const GOOGLE_JWKS_URI = 'https://www.googleapis.com/oauth2/v3/certs';
+const GOOGLE_JWKS_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+export function setGoogleFetchImpl(fn: typeof fetch | null): void {
+  googleFetchImpl = fn || fetch;
+}
+
+export function setGoogleJwksOverride(keys: GoogleJwk[] | null): void {
+  googleJwksOverride = keys;
+  cachedGoogleJwks = null;
+}
+
+export async function fetchGoogleJwks(
+  forceRefresh = false,
+  fetchImpl: typeof fetch = googleFetchImpl
+): Promise<GoogleJwk[]> {
+  if (googleJwksOverride) {
+    return googleJwksOverride;
+  }
+  const now = Date.now();
+  if (!forceRefresh && cachedGoogleJwks && now - cachedGoogleJwks.fetchedAt < GOOGLE_JWKS_CACHE_TTL_MS) {
+    return cachedGoogleJwks.keys;
+  }
+
+  const res = await fetchImpl(GOOGLE_JWKS_URI);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch Google OIDC JWKS (${res.status})`);
+  }
+  const body = (await res.json()) as { keys?: GoogleJwk[] };
+  if (!body || !Array.isArray(body.keys) || body.keys.length === 0) {
+    throw new Error('Google OIDC JWKS response contained no signing keys');
+  }
+  cachedGoogleJwks = { keys: body.keys, fetchedAt: now };
+  return body.keys;
+}
+
 export function validateGoogleIdTokenPayload(
   payload: GoogleIdTokenClaims,
   expectedClientId = config.GOOGLE_CLIENT_ID,
@@ -224,7 +384,10 @@ export function validateGoogleIdTokenPayload(
   if (!payload.exp || Number(payload.exp) <= nowSec) {
     throw new Error('Expired OIDC ID token');
   }
-  if (!payload.sub) {
+  if (payload.iat !== undefined && Number(payload.iat) > nowSec + 300) {
+    throw new Error('OIDC ID token issued in the future (invalid iat claim)');
+  }
+  if (!payload.sub || typeof payload.sub !== 'string') {
     throw new Error('Missing OIDC subject (sub) claim');
   }
   if (payload.email_verified === false) {
@@ -232,10 +395,74 @@ export function validateGoogleIdTokenPayload(
   }
 }
 
-let googleFetchImpl: typeof fetch = fetch;
+/**
+ * Cryptographically verifies a Google OIDC ID token (JWS RS256 signature against Google's JWK Set)
+ * and validates all required OIDC identity claims (iss, aud, exp, iat, sub, email_verified).
+ */
+export async function verifyGoogleIdTokenCryptographically(
+  idToken: string,
+  expectedClientId = config.GOOGLE_CLIENT_ID,
+  options?: {
+    nowSec?: number;
+    jwks?: GoogleJwk[];
+    fetchImpl?: typeof fetch;
+  }
+): Promise<GoogleIdTokenClaims> {
+  if (!idToken || typeof idToken !== 'string') {
+    throw new Error('Missing OIDC ID token');
+  }
+  const parts = idToken.split('.');
+  if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) {
+    throw new Error('Malformed OIDC ID token');
+  }
 
-export function setGoogleFetchImpl(fn: typeof fetch | null): void {
-  googleFetchImpl = fn || fetch;
+  const [headerB64, payloadB64, signatureB64] = parts;
+  let header: { alg?: string; kid?: string; typ?: string };
+  let payload: GoogleIdTokenClaims;
+  try {
+    header = JSON.parse(Buffer.from(headerB64, 'base64url').toString('utf8'));
+    payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
+  } catch {
+    throw new Error('Malformed OIDC ID token JSON segments');
+  }
+
+  if (header.alg !== 'RS256') {
+    throw new Error(`Unsupported OIDC ID token signing algorithm: ${header.alg || 'none'}`);
+  }
+  if (!header.kid || typeof header.kid !== 'string') {
+    throw new Error('Missing OIDC ID token key ID (kid) header');
+  }
+
+  const fetchImpl = options?.fetchImpl || googleFetchImpl;
+  let keys = options?.jwks ?? (await fetchGoogleJwks(false, fetchImpl));
+  let jwk = keys.find((k) => k.kid === header.kid);
+  if (!jwk && !options?.jwks && !googleJwksOverride) {
+    keys = await fetchGoogleJwks(true, fetchImpl);
+    jwk = keys.find((k) => k.kid === header.kid);
+  }
+  if (!jwk) {
+    throw new Error(`Unable to find matching Google OIDC signing key for kid="${header.kid}"`);
+  }
+
+  let publicKey: crypto.KeyObject;
+  try {
+    publicKey = crypto.createPublicKey({
+      key: jwk as crypto.JsonWebKey,
+      format: 'jwk',
+    });
+  } catch (err: any) {
+    throw new Error(`Invalid Google OIDC JWK public key: ${err.message}`);
+  }
+
+  const signingInput = Buffer.from(`${headerB64}.${payloadB64}`, 'utf8');
+  const signatureBytes = Buffer.from(signatureB64, 'base64url');
+  const signatureValid = crypto.verify('RSA-SHA256', signingInput, publicKey, signatureBytes);
+  if (!signatureValid) {
+    throw new Error('Invalid OIDC ID token cryptographic signature');
+  }
+
+  validateGoogleIdTokenPayload(payload, expectedClientId, options?.nowSec);
+  return payload;
 }
 
 export async function exchangeGoogleCodeForUser(
@@ -272,13 +499,13 @@ export async function exchangeGoogleCodeForUser(
     id_token?: string;
   };
 
+  let verifiedIdClaims: GoogleIdTokenClaims | null = null;
   if (tokenData.id_token) {
-    const parts = tokenData.id_token.split('.');
-    if (parts.length !== 3) {
-      throw new Error('Malformed OIDC ID token');
-    }
-    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')) as GoogleIdTokenClaims;
-    validateGoogleIdTokenPayload(payload, config.GOOGLE_CLIENT_ID);
+    verifiedIdClaims = await verifyGoogleIdTokenCryptographically(
+      tokenData.id_token,
+      config.GOOGLE_CLIENT_ID,
+      { fetchImpl }
+    );
   }
 
   const userRes = await fetchImpl('https://openidconnect.googleapis.com/v1/userinfo', {
@@ -302,6 +529,9 @@ export async function exchangeGoogleCodeForUser(
   }
   if (profile.email_verified === false) {
     throw new Error('Google account email is not verified');
+  }
+  if (verifiedIdClaims && verifiedIdClaims.sub && verifiedIdClaims.sub !== profile.sub) {
+    throw new Error('OIDC subject (sub) mismatch between ID token and userinfo response');
   }
 
   return await upsertUser({
@@ -433,7 +663,7 @@ export function clearSessionCookies(res: Response, req: Request): void {
 }
 
 export function setOAuthStateCookie(res: Response, req: Request, state: string): void {
-  res.cookie(OAUTH_STATE_COOKIE_NAME, state, getCookieOptions(req, 10 * 60 * 1000));
+  res.cookie(OAUTH_STATE_COOKIE_NAME, state, getCookieOptions(req, OAUTH_STATE_TTL_MS));
 }
 
 export function clearOAuthStateCookie(res: Response, req: Request): void {
@@ -496,56 +726,6 @@ export async function ensureDefaultWorkspaceUser(): Promise<UserRow> {
     email: 'alex@reachinbox.ai',
     name: 'Alex Carter',
     avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-  });
-}
-
-export async function purgeNonAlexCarterAccounts(): Promise<void> {
-  const db = getDb();
-  const alex = await ensureDefaultWorkspaceUser();
-  const alexId = alex.id;
-
-  // Reassign any legacy 'default-user' senders to Alex Carter
-  await db.execute({
-    sql: `UPDATE senders SET userId = ? WHERE userId = 'default-user'`,
-    args: [alexId],
-  });
-
-  // Remove all credentials, sessions, senders, Slack connections, campaigns, emails, attempts, events, and outbox jobs for all accounts except Alex Carter
-  await db.execute({
-    sql: `DELETE FROM sessions WHERE userId != ?`,
-    args: [alexId],
-  });
-  await db.execute({
-    sql: `DELETE FROM slack_connections WHERE userId != ?`,
-    args: [alexId],
-  });
-  await db.execute({
-    sql: `DELETE FROM senders WHERE userId != ?`,
-    args: [alexId],
-  });
-  await db.execute({
-    sql: `DELETE FROM send_attempts WHERE emailId NOT IN (SELECT id FROM emails WHERE userId = ?)`,
-    args: [alexId],
-  });
-  await db.execute({
-    sql: `DELETE FROM email_events WHERE (userId IS NOT NULL AND userId != ?) OR (emailId IS NOT NULL AND emailId NOT IN (SELECT id FROM emails WHERE userId = ?))`,
-    args: [alexId, alexId],
-  });
-  await db.execute({
-    sql: `DELETE FROM outbox_jobs WHERE entityId NOT IN (SELECT id FROM emails WHERE userId = ?)`,
-    args: [alexId],
-  });
-  await db.execute({
-    sql: `DELETE FROM emails WHERE userId != ?`,
-    args: [alexId],
-  });
-  await db.execute({
-    sql: `DELETE FROM campaigns WHERE userId != ?`,
-    args: [alexId],
-  });
-  await db.execute({
-    sql: `DELETE FROM users WHERE id != ?`,
-    args: [alexId],
   });
 }
 

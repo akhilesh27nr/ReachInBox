@@ -187,12 +187,7 @@ export default function App() {
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed && typeof parsed.email === 'string') {
-          if (parsed.email.toLowerCase() === 'alex@reachinbox.ai') {
-            return parsed as WorkspaceUser;
-          }
-          localStorage.removeItem('reachinbox_user');
-          localStorage.removeItem('reachinbox_session_token');
-          sessionTokenRef.current = null;
+          return parsed as WorkspaceUser;
         }
       }
     } catch {}

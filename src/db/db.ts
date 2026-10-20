@@ -89,6 +89,10 @@ export const CAMEL_COLUMNS = [
   'processedAt',
   'senderEmail',
   'senderName',
+  'browserBindHash',
+  'consumedAt',
+  'dedupeKey',
+  'windowIndex',
 ];
 
 export function translateSqlForPostgres(sql: string): string {
@@ -414,6 +418,18 @@ export async function initDb(options?: InitDbOptions): Promise<void> {
 
     CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(userId, expiresAt);
 
+    CREATE TABLE IF NOT EXISTS oauth_states (
+      state TEXT PRIMARY KEY,
+      provider TEXT NOT NULL,
+      browserBindHash TEXT,
+      userId TEXT,
+      createdAt INTEGER NOT NULL,
+      expiresAt INTEGER NOT NULL,
+      consumedAt INTEGER
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_oauth_states_expires ON oauth_states(expiresAt);
+
     CREATE TABLE IF NOT EXISTS senders (
       id TEXT PRIMARY KEY,
       userId TEXT,
@@ -427,6 +443,8 @@ export async function initDb(options?: InitDbOptions): Promise<void> {
       isActive INTEGER DEFAULT 1,
       createdAt TEXT
     );
+
+    CREATE INDEX IF NOT EXISTS idx_senders_user ON senders(userId, isActive);
 
     CREATE TABLE IF NOT EXISTS slack_connections (
       id TEXT PRIMARY KEY,
@@ -444,6 +462,21 @@ export async function initDb(options?: InitDbOptions): Promise<void> {
       connectedAt TEXT,
       disconnectedAt TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS slack_alert_dedup (
+      dedupeKey TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      senderId TEXT NOT NULL,
+      windowIndex INTEGER NOT NULL,
+      status TEXT NOT NULL,
+      attempts INTEGER DEFAULT 1,
+      lastError TEXT,
+      createdAt INTEGER NOT NULL,
+      updatedAt INTEGER NOT NULL,
+      UNIQUE(userId, senderId, windowIndex)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_slack_alert_dedup_user_window ON slack_alert_dedup(userId, senderId, windowIndex);
 
     CREATE TABLE IF NOT EXISTS campaigns (
       id TEXT PRIMARY KEY,
@@ -500,6 +533,7 @@ export async function initDb(options?: InitDbOptions): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_emails_user_status ON emails(userId, status, scheduledAt);
     CREATE INDEX IF NOT EXISTS idx_emails_sender_status ON emails(senderId, status);
     CREATE INDEX IF NOT EXISTS idx_emails_campaign ON emails(campaignId, sequence);
+    CREATE INDEX IF NOT EXISTS idx_emails_recipient ON emails(userId, toEmail);
 
     CREATE TABLE IF NOT EXISTS send_attempts (
       id TEXT PRIMARY KEY,
@@ -543,6 +577,7 @@ export async function initDb(options?: InitDbOptions): Promise<void> {
     );
 
     CREATE INDEX IF NOT EXISTS idx_email_events_email ON email_events(emailId, createdAt);
+    CREATE INDEX IF NOT EXISTS idx_email_events_user ON email_events(userId, createdAt);
   `);
 
   const safeAlterStatements = [
