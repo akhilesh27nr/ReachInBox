@@ -1,0 +1,375 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    background-color: #090c15;
+    color: #f1f5f9;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+}
+
+/* ========================================================
+   GLASSMORPHISM (GLASSY UI) SYSTEM — DARK & LIGHT MODES
+   ======================================================== */
+.glass-header {
+  background: linear-gradient(180deg, rgba(16, 21, 36, 0.78) 0%, rgba(12, 16, 28, 0.68) 100%) !important;
+  backdrop-filter: blur(24px) saturate(190%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(190%) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.32), inset 0 1px 0 0 rgba(255, 255, 255, 0.08) !important;
+}
+
+.glass-panel {
+  background: linear-gradient(145deg, rgba(24, 31, 54, 0.72) 0%, rgba(15, 19, 34, 0.62) 100%) !important;
+  backdrop-filter: blur(22px) saturate(185%) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(185%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  box-shadow:
+    0 12px 36px -6px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.15) !important;
+}
+
+.glass-subcard {
+  background: linear-gradient(145deg, rgba(16, 21, 38, 0.68) 0%, rgba(11, 15, 27, 0.56) 100%) !important;
+  backdrop-filter: blur(16px) saturate(170%) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(170%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Custom sleek scrollbar for table containers */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.6);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.4);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.6);
+}
+
+/* ========================================================
+   HIGH-CONTRAST LIGHT MODE + FROSTED GLASS STYLES
+   ======================================================== */
+.theme-light,
+.theme-light body,
+.theme-light .bg-\[\#090c15\] {
+  background: linear-gradient(135deg, #e8eef8 0%, #f1f5fd 50%, #e6f2f5 100%) !important;
+  color: #0f172a !important;
+}
+
+.theme-light .ambient-orb-1 {
+  background-color: rgba(99, 102, 241, 0.22) !important;
+}
+.theme-light .ambient-orb-2 {
+  background-color: rgba(6, 182, 212, 0.2) !important;
+}
+.theme-light .ambient-orb-3 {
+  background-color: rgba(16, 185, 129, 0.16) !important;
+}
+
+.theme-light header,
+.theme-light .glass-header {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.82) 0%, rgba(248, 250, 255, 0.74) 100%) !important;
+  backdrop-filter: blur(24px) saturate(190%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(190%) !important;
+  border-bottom: 1px solid rgba(203, 213, 225, 0.85) !important;
+  box-shadow: 0 4px 24px rgba(15, 23, 42, 0.06), inset 0 1px 0 0 rgba(255, 255, 255, 0.95) !important;
+}
+
+.theme-light .glass-panel,
+.theme-light .bg-\[\#121624\] {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.78) 0%, rgba(248, 250, 255, 0.66) 100%) !important;
+  backdrop-filter: blur(22px) saturate(190%) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(190%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.9) !important;
+  box-shadow:
+    0 12px 32px -6px rgba(30, 41, 59, 0.08),
+    0 0 0 1px rgba(148, 163, 184, 0.3),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.98) !important;
+}
+
+/* Secondary / Nested Glass Surfaces, Sub-cards, Table Headers & Footers */
+.theme-light .glass-subcard,
+.theme-light .bg-\[\#0e121d\],
+.theme-light .bg-\[\#101420\],
+.theme-light .bg-\[\#101420\]\/80,
+.theme-light .bg-\[\#0d101b\],
+.theme-light .bg-\[\#0d101a\],
+.theme-light .bg-\[\#0b0e17\],
+.theme-light .bg-\[\#0c101d\],
+.theme-light .bg-\[\#0e1320\],
+.theme-light .bg-\[\#080b12\],
+.theme-light .bg-\[\#0a0d16\]\/60,
+.theme-light .bg-\[\#101524\]\/60 {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.75) 0%, rgba(241, 245, 249, 0.65) 100%) !important;
+  backdrop-filter: blur(16px) saturate(170%) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(170%) !important;
+  border-color: rgba(148, 163, 184, 0.45) !important;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.9) !important;
+}
+
+.theme-light .bg-\[\#0d101b\]\/60,
+.theme-light .bg-\[\#0d101b\]\/65 {
+  background: rgba(255, 255, 255, 0.65) !important;
+  border-color: #94a3b8 !important;
+}
+
+/* Floating Chart Hover Tooltip in Light Mode */
+.theme-light [role="tooltip"] {
+  background: rgba(255, 255, 255, 0.95) !important;
+  border-color: #818cf8 !important;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.16) !important;
+}
+
+/* Slate Utility Backgrounds (Buttons, Chips, Progress Tracks, Kbd, Pagination) */
+.theme-light .bg-slate-900,
+.theme-light .bg-slate-800,
+.theme-light .bg-slate-800\/80,
+.theme-light .bg-slate-800\/70,
+.theme-light .bg-slate-800\/60,
+.theme-light .bg-slate-800\/50 {
+  background-color: rgba(241, 245, 249, 0.85) !important;
+  border-color: #cbd5e1 !important;
+  color: #1e293b !important;
+}
+
+.theme-light button.bg-slate-800:hover,
+.theme-light button.bg-slate-800\/80:hover,
+.theme-light button.bg-slate-800\/70:hover,
+.theme-light button.bg-slate-800\/60:hover {
+  background-color: #e2e8f0 !important;
+  border-color: #94a3b8 !important;
+  color: #0f172a !important;
+}
+
+/* Keep Toast dark and high-contrast in both modes */
+.theme-light .bg-slate-900\/90,
+.theme-light .bg-slate-900\/95 {
+  background-color: #0f172a !important;
+  color: #ffffff !important;
+}
+.theme-light .bg-slate-900\/90 span,
+.theme-light .bg-slate-900\/90 button,
+.theme-light .bg-slate-900\/95 span,
+.theme-light .bg-slate-900\/95 button {
+  color: #f8fafc !important;
+}
+
+/* High-Contrast Typography (Preserve white text on filled brand buttons!) */
+.theme-light .text-white:not(.bg-indigo-600):not(.bg-indigo-500):not(.bg-rose-600):not(.bg-emerald-600) {
+  color: #0f172a !important;
+}
+
+.theme-light .bg-indigo-600,
+.theme-light .bg-indigo-600 *,
+.theme-light .bg-indigo-500,
+.theme-light .bg-indigo-500 *,
+.theme-light .bg-rose-600,
+.theme-light .bg-rose-600 * {
+  color: #ffffff !important;
+}
+
+.theme-light .text-slate-100,
+.theme-light .text-slate-200,
+.theme-light .text-slate-300 {
+  color: #1e293b !important;
+}
+
+.theme-light .text-slate-400 {
+  color: #475569 !important;
+}
+
+.theme-light .text-slate-500,
+.theme-light .text-slate-600 {
+  color: #64748b !important;
+}
+
+/* Semantic Tinted Badges & Callout Surfaces in Light Mode */
+.theme-light .bg-emerald-950\/40,
+.theme-light .bg-emerald-950\/50,
+.theme-light .bg-emerald-950\/60,
+.theme-light .bg-emerald-950\/80,
+.theme-light .bg-emerald-950\/90 {
+  background-color: rgba(236, 253, 245, 0.88) !important;
+  border-color: #6ee7b7 !important;
+  color: #047857 !important;
+}
+
+.theme-light .text-emerald-300,
+.theme-light .text-emerald-400,
+.theme-light .text-emerald-400\/90 {
+  color: #047857 !important;
+}
+
+.theme-light .bg-indigo-950,
+.theme-light .bg-indigo-950\/80,
+.theme-light .bg-indigo-950\/60,
+.theme-light .bg-indigo-950\/50,
+.theme-light .bg-indigo-950\/30,
+.theme-light .bg-indigo-950\/25,
+.theme-light .bg-indigo-950\/20 {
+  background-color: rgba(238, 242, 255, 0.85) !important;
+  border-color: #c7d2fe !important;
+  color: #3730a3 !important;
+}
+
+.theme-light .text-indigo-200,
+.theme-light .text-indigo-300,
+.theme-light .text-indigo-400 {
+  color: #4338ca !important;
+}
+
+.theme-light .bg-indigo-600\/20,
+.theme-light .bg-indigo-600\/30 {
+  background-color: #e0e7ff !important;
+  border-color: #a5b4fc !important;
+  color: #4338ca !important;
+}
+
+.theme-light .bg-rose-950,
+.theme-light .bg-rose-950\/60,
+.theme-light .bg-rose-950\/80,
+.theme-light .bg-rose-950\/90,
+.theme-light .bg-red-950\/60 {
+  background-color: rgba(255, 241, 242, 0.9) !important;
+  border-color: #fda4af !important;
+  color: #be123c !important;
+}
+
+.theme-light .text-rose-300,
+.theme-light .text-rose-400,
+.theme-light .text-red-300,
+.theme-light .text-red-400 {
+  color: #be123c !important;
+}
+
+.theme-light .bg-amber-950\/60,
+.theme-light .bg-amber-500\/20 {
+  background-color: rgba(255, 251, 235, 0.9) !important;
+  border-color: #fcd34d !important;
+  color: #b45309 !important;
+}
+
+.theme-light .text-amber-300,
+.theme-light .text-amber-400 {
+  color: #b45309 !important;
+}
+
+.theme-light .bg-purple-950\/60 {
+  background-color: rgba(250, 245, 255, 0.9) !important;
+  border-color: #d8b4fe !important;
+  color: #6b21a8 !important;
+}
+
+.theme-light .text-purple-300,
+.theme-light .text-purple-400 {
+  color: #6b21a8 !important;
+}
+
+.theme-light .bg-blue-950\/60 {
+  background-color: rgba(239, 246, 255, 0.9) !important;
+  border-color: #93c5fd !important;
+  color: #1d4ed8 !important;
+}
+
+.theme-light .text-blue-300 {
+  color: #1d4ed8 !important;
+}
+
+.theme-light .text-teal-400 {
+  color: #0f766e !important;
+}
+
+.theme-light .text-cyan-300,
+.theme-light .text-cyan-400 {
+  color: #0e7490 !important;
+}
+
+/* High-Contrast Borders */
+.theme-light .border-slate-800,
+.theme-light .border-slate-800\/80,
+.theme-light .border-slate-800\/60,
+.theme-light .border-slate-800\/40,
+.theme-light .border-slate-700,
+.theme-light .border-slate-700\/80,
+.theme-light .border-slate-700\/70,
+.theme-light .border-slate-700\/60,
+.theme-light .border-slate-700\/50 {
+  border-color: rgba(148, 163, 184, 0.45) !important;
+}
+
+/* Inputs, Textareas, and Selects */
+.theme-light input:not([type="range"]):not([type="file"]):not([type="checkbox"]):not(.bg-transparent),
+.theme-light select {
+  background-color: rgba(255, 255, 255, 0.85) !important;
+  color: #0f172a !important;
+  border-color: #94a3b8 !important;
+}
+
+.theme-light textarea {
+  background-color: transparent !important;
+  color: #0f172a !important;
+}
+
+.theme-light input.bg-transparent {
+  background-color: transparent !important;
+  color: #0f172a !important;
+}
+
+.theme-light input[type="range"] {
+  background-color: #cbd5e1 !important;
+}
+
+.theme-light input[type="checkbox"] {
+  background-color: #ffffff !important;
+  border-color: #64748b !important;
+}
+
+.theme-light input::placeholder,
+.theme-light textarea::placeholder {
+  color: #64748b !important;
+}
+
+/* Table High Contrast Glass Styling */
+.theme-light thead {
+  background-color: rgba(241, 245, 249, 0.78) !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+
+.theme-light thead th {
+  color: #1e293b !important;
+  font-weight: 700 !important;
+}
+
+.theme-light tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.65) !important;
+}
+
+.theme-light .divide-slate-800\/60 > * + * {
+  border-color: #e2e8f0 !important;
+}
+
+/* Light Theme Scrollbars */
+.theme-light ::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+.theme-light ::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+}
+
+.theme-light ::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}

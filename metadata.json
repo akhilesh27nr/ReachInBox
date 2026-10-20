@@ -1,0 +1,6 @@
+{
+  "name": "ReachInbox Email Job Scheduler",
+  "description": "Production-grade distributed email job scheduler powered by BullMQ, Redis, atomic Lua rate limiting, and multi-sender Ethereal SMTP delivery.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

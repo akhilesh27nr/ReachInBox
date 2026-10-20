@@ -1,0 +1,104 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: reachinbox-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-reachinbox}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-reachinbox}
+      POSTGRES_DB: ${POSTGRES_DB:-reachinbox}
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./src/db/migrations/001_initial_schema.sql:/docker-entrypoint-initdb.d/001_initial_schema.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-reachinbox} -d ${POSTGRES_DB:-reachinbox}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  redis:
+    image: redis:7-alpine
+    container_name: reachinbox-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory-policy noeviction
+    ports:
+      - '${REDIS_PORT:-6379}:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.12.0
+    container_name: reachinbox-elasticsearch
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+      - '${ELASTICSEARCH_PORT:-9200}:9200'
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -fsSL http://localhost:9200/_cluster/health || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: reachinbox-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    ports:
+      - '${PORT:-3000}:3000'
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 3000
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      BACKEND_URL: ${BACKEND_URL:-http://localhost:3000}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-reachinbox}:${POSTGRES_PASSWORD:-reachinbox}@postgres:5432/${POSTGRES_DB:-reachinbox}
+      REDIS_URL: redis://redis:6379
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+      ES_EMAILS_INDEX: ${ES_EMAILS_INDEX:-emails}
+      STRICT_INFRASTRUCTURE: ${STRICT_INFRASTRUCTURE:-true}
+      ALLOW_EMBEDDED_FALLBACK: ${ALLOW_EMBEDDED_FALLBACK:-false}
+      STRICT_AUTH: ${STRICT_AUTH:-false}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set (>= 32 chars)}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set (>= 32 chars)}
+      BULL_BOARD_USER: ${BULL_BOARD_USER:-admin}
+      BULL_BOARD_PASS: ${BULL_BOARD_PASS:?BULL_BOARD_PASS must be set (>= 8 chars)}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-5}
+      MIN_DELAY_BETWEEN_EMAILS_MS: ${MIN_DELAY_BETWEEN_EMAILS_MS:-2000}
+      MAX_EMAILS_PER_HOUR_PER_SENDER: ${MAX_EMAILS_PER_HOUR_PER_SENDER:-200}
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:3000/ready || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
+volumes:
+  postgres_data:
+  redis_data:
+  es_data:
